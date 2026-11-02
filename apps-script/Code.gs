@@ -1,4 +1,4 @@
-// CODE.GS VERSION 2.0 - 2026-11-02 (paste this whole file, then Deploy > Manage deployments > New version; then run authorizeMail once)
+// CODE.GS VERSION 2.1 - 2026-11-02 (paste this whole file, then Deploy > New deployment (Web app); then run authorizeMail once)
 /**
  * Mentari HSSE Tracker — Google Sheets backend
  * ---------------------------------------------
@@ -70,9 +70,22 @@ function authorizeMail() {
   MailApp.sendEmail(MANAGER_RESET_EMAIL, "Mentari HSSE Tracker - email check", "Code reset emails will be sent to this address.");
 }
 
+// v2.1: the Live and Pending tabs (and their header rows) are created automatically the first time they are needed.
+var SHEET_HEADERS = {
+  "Live": ["id", "month", "project", "submittedBy", "submittedAt", "dataJson"],
+  "Pending": ["id", "month", "project", "weekStart", "submittedBy", "submittedAt", "dataJson"]
+};
 function _sheet(name) {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
+  if (!sh && SHEET_HEADERS[name]) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, SHEET_HEADERS[name].length).setValues([SHEET_HEADERS[name]]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
 }
+// Optional: run once from the editor to create both tabs straight away.
+function setup() { _sheet(LIVE_SHEET); _sheet(PENDING_SHEET); }
 
 function _json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
