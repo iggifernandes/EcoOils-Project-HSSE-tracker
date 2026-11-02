@@ -1,4 +1,4 @@
-// CODE.GS VERSION 2.1 - 2026-11-02 (paste this whole file, then Deploy > New deployment (Web app); then run authorizeMail once)
+// CODE.GS VERSION 2.2 - 2026-11-02 (paste this whole file, then Deploy > Manage deployments > pencil > New version; run authorizeMail once if you have not)
 /**
  * Mentari HSSE Tracker — Google Sheets backend
  * ---------------------------------------------
@@ -39,7 +39,7 @@ var LOGGER_WHITELIST = [
   "agung.muliawan@ecooils.co.id",
   "ronore.lapat@ecooils.co.id"
 ];
-var LOGGER_PASSWORD = "2026";
+var LOGGER_PASSWORD = "2026";   // legacy: works for a logger ONLY until their first "Forgot access code?" code is used; then it is switched off for that person
 var MANAGER_EMAIL = "iggifernandes@gmail.com";
 var MANAGER_RESET_EMAIL = "Ignatius.Ambrosio@ecooils.com.my";   // the "Forgot code?" 6-digit code is sent here
 var LEGACY_MANAGER_PASSWORD = "0822";   // works ONLY until the first reset; once a new code is set this is switched off for good
@@ -64,6 +64,23 @@ function _mgrPassOk(pw) {
   return ok;
 }
 function _sixDigits() { return ("000000" + (parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 8), 16) % 1000000)).slice(-6); }
+
+// ---- Logger access codes: one salted-hash code per logger. "Forgot access code?" emails a NEW code to the manager (MANAGER_RESET_EMAIL), who passes it on. ----
+function _loggerPassOk(email, pw) {
+  email = String(email || "").trim().toLowerCase();
+  if (LOGGER_WHITELIST.indexOf(email) === -1) return false;
+  var cache = CacheService.getScriptCache(), fk = "lg_fail_" + email;
+  if (Number(cache.get(fk) || 0) >= 5) return false;
+  var p = _props(), s = String(pw || ""), cur = p.getProperty("LG_HASH_" + email), nw = p.getProperty("LG_NEW_" + email), ok = false;
+  if (cur && _hash(p.getProperty("LG_SALT_" + email), s) === cur) ok = true;
+  else if (nw && _hash(p.getProperty("LG_NSALT_" + email), s) === nw) {
+    p.setProperties({ ["LG_SALT_" + email]: p.getProperty("LG_NSALT_" + email), ["LG_HASH_" + email]: nw });
+    p.deleteProperty("LG_NEW_" + email); p.deleteProperty("LG_NSALT_" + email);
+    ok = true;
+  } else if (!cur && s === LOGGER_PASSWORD) ok = true;
+  if (ok) cache.remove(fk); else cache.put(fk, String(Number(cache.get(fk) || 0) + 1), 900);
+  return ok;
+}
 
 // Run this ONCE from the editor (Run > authorizeMail > Allow). It also sends a test email to MANAGER_RESET_EMAIL.
 function authorizeMail() {
@@ -185,7 +202,7 @@ function doPost(e) {
 
     if (action === "submit") {
       var email = (body.email || "").trim().toLowerCase();
-      if (LOGGER_WHITELIST.indexOf(email) === -1 || body.password !== LOGGER_PASSWORD) {
+      if (LOGGER_WHITELIST.indexOf(email) === -1 || !_loggerPassOk(email, body.password)) {
         return _json({ ok: false, error: "Invalid credentials" });
       }
       var pending = _sheet(PENDING_SHEET);
@@ -203,7 +220,7 @@ function doPost(e) {
 
     if (action === "getDraft") {
       var gEmail = (body.email || "").trim().toLowerCase();
-      if (LOGGER_WHITELIST.indexOf(gEmail) === -1 || body.password !== LOGGER_PASSWORD) {
+      if (LOGGER_WHITELIST.indexOf(gEmail) === -1 || !_loggerPassOk(gEmail, body.password)) {
         return _json({ ok: false, error: "Invalid credentials" });
       }
       var pendingG = _sheet(PENDING_SHEET);
@@ -308,6 +325,30 @@ function doPost(e) {
 
       matchingRows.forEach(function (rowNum) { pendingSheet2.deleteRow(rowNum); });
       return _json({ ok: true });
+    }
+
+    if (action === "loggerCheck") {
+      var lce = (body.email || "").trim().toLowerCase();
+      return _json({ ok: _loggerPassOk(lce, body.password) });
+    }
+
+    if (action === "loggerForgot") {
+      var lfe = (body.email || "").trim().toLowerCase();
+      if (LOGGER_WHITELIST.indexOf(lfe) !== -1) {
+        var pl = _props(), nowL = Date.now();
+        if (nowL - Number(pl.getProperty("LG_SENT_" + lfe) || 0) >= 120000) {
+          var lcode = ("0000" + (parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 8), 16) % 10000)).slice(-4), lsalt = Utilities.getUuid(), setObj = {};
+          setObj["LG_NSALT_" + lfe] = lsalt; setObj["LG_NEW_" + lfe] = _hash(lsalt, lcode); setObj["LG_SENT_" + lfe] = String(nowL);
+          pl.setProperties(setObj);
+          try {
+            MailApp.sendEmail(MANAGER_RESET_EMAIL, "Mentari HSSE Tracker - new access code for " + lfe,
+              lfe + " asked for a new Log month access code.\n\nNew code: " + lcode + "\n\nPass it on to them. It switches on the first time it is used; their old code keeps working until then.\nIf this request was not expected, ignore this email.");
+          } catch (mailErr2) {
+            return _json({ ok: false, error: "The email could not be sent. Run authorizeMail once in the Apps Script editor." });
+          }
+        }
+      }
+      return _json({ ok: true });   // same reply whatever was typed
     }
 
     if (action === "mgrCheck") {
