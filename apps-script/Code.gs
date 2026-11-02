@@ -1,4 +1,4 @@
-// CODE.GS VERSION 2.2 - 2026-11-02 (paste this whole file, then Deploy > Manage deployments > pencil > New version; run authorizeMail once if you have not)
+// CODE.GS VERSION 2.3 - 2026-11-02 (paste this whole file, then Deploy > Manage deployments > pencil > New version; then reload the Sheet to see the HSSE Tracker menu)
 /**
  * Mentari HSSE Tracker — Google Sheets backend
  * ---------------------------------------------
@@ -80,6 +80,43 @@ function _loggerPassOk(email, pw) {
   } else if (!cur && s === LOGGER_PASSWORD) ok = true;
   if (ok) cache.remove(fk); else cache.put(fk, String(Number(cache.get(fk) || 0) + 1), 900);
   return ok;
+}
+
+// ---- Sheet menu (visible only to people who can edit this Sheet): set a code without email. The code is typed into a pop-up, stored only as a salted hash, never in the code or the Sheet. ----
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu("HSSE Tracker")
+    .addItem("Set manager code", "menuSetManagerCode")
+    .addItem("Set a logger's access code", "menuSetLoggerCode")
+    .addToUi();
+}
+function _askCode(ui, title, text) {
+  var r = ui.prompt(title, text, ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return null;
+  var v = String(r.getResponseText() || "").trim();
+  if (!/^\d{4}$/.test(v)) { ui.alert("The code must be exactly 4 digits."); return null; }
+  return v;
+}
+function menuSetManagerCode() {
+  var ui = SpreadsheetApp.getUi(), v = _askCode(ui, "Set manager code", "Enter a new 4-digit code:");
+  if (!v) return;
+  var salt = Utilities.getUuid();
+  _props().setProperties({ MGR_PIN_SALT: salt, MGR_PIN_HASH: _hash(salt, v) });
+  CacheService.getScriptCache().remove("mgr_fail");
+  ui.alert("Manager code updated. Use it to sign in to the tracker.");
+}
+function menuSetLoggerCode() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt("Set a logger's access code", "Logger email (" + LOGGER_WHITELIST.join(", ") + "):", ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var em = String(r.getResponseText() || "").trim().toLowerCase();
+  if (LOGGER_WHITELIST.indexOf(em) === -1) { ui.alert("That email is not on the logger list."); return; }
+  var v = _askCode(ui, "Set access code", "Enter a new 4-digit code for " + em + ":");
+  if (!v) return;
+  var salt = Utilities.getUuid(), o = {};
+  o["LG_SALT_" + em] = salt; o["LG_HASH_" + em] = _hash(salt, v);
+  var p = _props(); p.setProperties(o); p.deleteProperty("LG_NEW_" + em); p.deleteProperty("LG_NSALT_" + em);
+  CacheService.getScriptCache().remove("lg_fail_" + em);
+  ui.alert("Access code updated for " + em + ".");
 }
 
 // Run this ONCE from the editor (Run > authorizeMail > Allow). It also sends a test email to MANAGER_RESET_EMAIL.
