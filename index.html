@@ -2392,7 +2392,7 @@ function App() {
       const mine = {};
       incidentsRef.current.forEach(x => {
         const m = String(x.date || "").slice(0, 7);
-        if (m < "2026-07") return;
+        if (!/^\d{4}-\d\d$/.test(m) || m < "2026-07") return;
         const k = m + " " + typeOf(x.type);
         mine[k] = (mine[k] || 0) + 1;
       });
