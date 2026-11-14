@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>HSSE Performance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap" media="print" onload="this.media='all'">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#fff;color:#231F20;font-family:'Jost',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+body{display:flex;min-height:100vh;min-height:100dvh;align-items:center;justify-content:center;padding:24px 16px}
+.top{position:fixed;top:8px;right:14px;text-align:right;font-size:11px;color:#8a8a8a;letter-spacing:.06em}
+.top .lang{margin-top:3px}
+.top .lang button{background:none;border:0;padding:2px 4px;font:inherit;color:#8a8a8a;cursor:pointer;letter-spacing:.06em}
+.top .lang button.on{color:#231F20;font-weight:600}
+.card{width:100%;max-width:380px}
+.logo{display:block;height:36px;margin:0 0 26px}
+h1{margin:0 0 6px;font-weight:300;font-size:22px;letter-spacing:.24em;text-transform:uppercase;color:#6E6B6C}
+.sub{margin:0 0 26px;font-size:14px;color:#6E6B6C}
+label{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6E6B6C;margin:0 0 6px}
+input{width:100%;font:inherit;font-size:16px;padding:12px 12px;border:1px solid #DCDCDC;border-radius:8px;background:#fff;color:#231F20;outline:none}
+input:focus{border-color:#44A276;box-shadow:0 0 0 3px #CFE8DC}
+input.code{font-size:26px;letter-spacing:.5em;text-align:center;padding-left:.5em;font-variant-numeric:tabular-nums}
+.hint{font-size:12px;color:#8a8a8a;margin:8px 0 18px;line-height:1.45}
+.btn{width:100%;font:inherit;font-size:15px;font-weight:500;padding:12px 14px;border:0;border-radius:8px;background:#44A276;color:#fff;cursor:pointer;letter-spacing:.02em}
+.btn:disabled{opacity:.55;cursor:default}
+.link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:#44A276;cursor:pointer}
+.link:disabled{color:#a0a0a0;cursor:default}
+.row{display:flex;justify-content:space-between;gap:12px;margin-top:16px;flex-wrap:wrap}
+.msg{min-height:20px;margin:14px 0 0;font-size:13px;line-height:1.4;color:#6E6B6C}
+.msg.err{color:#C0392B}
+.note{margin-top:26px;font-size:11.5px;color:#9a9a9a;line-height:1.5}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #CFE8DC;border-top-color:#44A276;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes s{to{transform:rotate(360deg)}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="top"><div>v__VER__</div><div class="lang" id="lang"></div></div>
+<main class="card" id="card">
+  <img class="logo" alt="EcoOils" src="data:image/png;base64,__LOGO__">
+  <h1 data-t="title"></h1>
+
+  <section id="s-load" hidden><p class="sub"><span class="spin"></span><span data-t="loading"></span></p></section>
+
+  <section id="s-email" hidden>
+    <p class="sub" data-t="sub"></p>
+    <form id="f-email" novalidate>
+      <label for="em" data-t="emailLabel"></label>
+      <input id="em" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required>
+      <p class="hint" data-t="emailHint"></p>
+      <button class="btn" id="b-send" type="submit" data-t="send"></button>
+    </form>
+  </section>
+
+  <section id="s-code" hidden>
+    <p class="sub"><span data-t="sentTo"></span> <b id="to"></b></p>
+    <form id="f-code" novalidate>
+      <label for="cd" data-t="codeLabel"></label>
+      <input id="cd" class="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="······">
+      <p class="hint" data-t="checkSpam"></p>
+      <button class="btn" id="b-open" type="submit" data-t="open"></button>
+    </form>
+    <div class="row"><button class="link" id="b-resend" type="button"></button><button class="link" id="b-other" type="button" data-t="other"></button></div>
+  </section>
+
+  <section id="s-net" hidden>
+    <p class="sub" data-t="net"></p>
+    <button class="btn" id="b-retry" type="button" data-t="retry"></button>
+  </section>
+
+  <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  <p class="note" data-t="privacy"></p>
+</main>
+
+<script id="p" type="text/plain">__PAYLOAD__</script>
+<script>
+(function () {
+  "use strict";
+  var API = "__API__", KEY = "hsse-view-token", LK = "hsse-lang";
+  var $ = function (id) { return document.getElementById(id); };
+  var S = {
+    en: { title: "HSSE Performance", sub: "Sign in with your EcoOils email. We will send you a one-time code.", emailLabel: "Work email", emailHint: "Only @ecooils.com.my and @ecooils.co.id addresses can open this tracker.", send: "Send code", sending: "Sending…", sentTo: "A 6-digit code was sent to", checkSpam: "Check your inbox and spam folder. The code is valid for 10 minutes.", codeLabel: "Access code", open: "Open tracker", checking: "Checking…", resend: "Send a new code", resendIn: "New code in {n}s", other: "Use a different email", again: "A code was sent a moment ago. Please check your inbox.", net: "Cannot reach the server. Check your connection and try again.", retry: "Try again", loading: "Opening…", domain: "Please use your @ecooils.com.my or @ecooils.co.id email.", bad: "The code is incorrect or has expired. Request a new one.", privacy: "Each visit is recorded for security. Other users cannot see who has opened the tracker.", old: "Please update your browser to open the tracker.", sent: "Code sent. Check your inbox." },
+    id: { title: "HSSE Performance", sub: "Masuk dengan email EcoOils Anda. Kami akan mengirim kode sekali pakai.", emailLabel: "Email kerja", emailHint: "Hanya alamat @ecooils.com.my dan @ecooils.co.id yang dapat membuka tracker ini.", send: "Kirim kode", sending: "Mengirim…", sentTo: "Kode 6 digit telah dikirim ke", checkSpam: "Periksa kotak masuk dan folder spam. Kode berlaku 10 menit.", codeLabel: "Kode akses", open: "Buka tracker", checking: "Memeriksa…", resend: "Kirim kode baru", resendIn: "Kode baru dalam {n} dtk", other: "Gunakan email lain", again: "Kode baru saja dikirim. Silakan periksa kotak masuk.", net: "Tidak dapat menghubungi server. Periksa koneksi Anda dan coba lagi.", retry: "Coba lagi", loading: "Membuka…", domain: "Gunakan email @ecooils.com.my atau @ecooils.co.id Anda.", bad: "Kode salah atau sudah kedaluwarsa. Minta kode baru.", privacy: "Setiap kunjungan dicatat untuk keamanan. Pengguna lain tidak dapat melihat siapa yang membuka tracker.", old: "Perbarui browser Anda untuk membuka tracker.", sent: "Kode terkirim. Periksa kotak masuk." },
+    ms: { title: "HSSE Performance", sub: "Log masuk dengan emel EcoOils anda. Kami akan menghantar kod sekali guna.", emailLabel: "Emel kerja", emailHint: "Hanya alamat @ecooils.com.my dan @ecooils.co.id boleh membuka tracker ini.", send: "Hantar kod", sending: "Menghantar…", sentTo: "Kod 6 digit telah dihantar ke", checkSpam: "Semak peti masuk dan folder spam. Kod sah selama 10 minit.", codeLabel: "Kod akses", open: "Buka tracker", checking: "Menyemak…", resend: "Hantar kod baharu", resendIn: "Kod baharu dalam {n}s", other: "Gunakan emel lain", again: "Kod baru sahaja dihantar. Sila semak peti masuk.", net: "Tidak dapat menghubungi pelayan. Semak sambungan anda dan cuba lagi.", retry: "Cuba lagi", loading: "Membuka…", domain: "Sila gunakan emel @ecooils.com.my atau @ecooils.co.id anda.", bad: "Kod salah atau telah tamat tempoh. Minta kod baharu.", privacy: "Setiap lawatan direkodkan untuk keselamatan. Pengguna lain tidak dapat melihat siapa yang membuka tracker.", old: "Sila kemas kini pelayar anda untuk membuka tracker.", sent: "Kod dihantar. Semak peti masuk." }
+  };
+  var lang = "en";
+  try { lang = localStorage.getItem(LK) || ""; } catch (e) {}
+  if (!S[lang]) { var nl = (navigator.language || "en").slice(0, 2).toLowerCase(); lang = nl === "id" ? "id" : nl === "ms" ? "ms" : "en"; }
+  var t = function (k, n) { var v = (S[lang] && S[lang][k]) || S.en[k] || k; return n === undefined ? v : v.replace("{n}", n); };
+
+  function applyLang() {
+    document.documentElement.lang = lang;
+    document.title = t("title");
+    [].forEach.call(document.querySelectorAll("[data-t]"), function (el) { el.textContent = t(el.getAttribute("data-t")); });
+    var box = $("lang"); box.innerHTML = "";
+    ["en", "id", "ms"].forEach(function (c, i) {
+      if (i) box.appendChild(document.createTextNode(" · "));
+      var b = document.createElement("button"); b.type = "button"; b.textContent = c.toUpperCase(); if (c === lang) b.className = "on";
+      b.onclick = function () { lang = c; try { localStorage.setItem(LK, c); } catch (e) {} applyLang(); setResend(); };
+      box.appendChild(b);
+    });
+  }
+  function show(id) { ["s-load", "s-email", "s-code", "s-net"].forEach(function (x) { $(x).hidden = x !== id; }); }
+  function say(m, err) { var el = $("msg"); el.textContent = m || ""; el.className = "msg" + (err ? " err" : ""); }
+  function ua() {
+    var u = navigator.userAgent || "", os = /Android/.test(u) ? "Android" : /iPhone|iPad|iPod/.test(u) ? "iOS" : /Windows/.test(u) ? "Windows" : /Mac OS X/.test(u) ? "macOS" : /Linux/.test(u) ? "Linux" : "other";
+    var br = /Edg\//.test(u) ? "Edge" : /OPR\//.test(u) ? "Opera" : /Firefox\//.test(u) ? "Firefox" : /Chrome\//.test(u) ? "Chrome" : /Safari\//.test(u) ? "Safari" : "browser";
+    return os + " · " + br + " · " + screen.width + "x" + screen.height;
+  }
+  function post(body) {
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 40000);
+    return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { return r.json(); }).then(function (j) { clearTimeout(to); return j; }, function (e) { clearTimeout(to); throw e; });
+  }
+  var get = function () { try { return localStorage.getItem(KEY) || ""; } catch (e) { return ""; } };
+  var put = function (v) { try { localStorage.setItem(KEY, v); } catch (e) {} };
+  var del = function () { try { localStorage.removeItem(KEY); } catch (e) {} };
+
+  // ---- decrypt + start the tracker ----
+  function b64(s) { var bin = atob(s), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+  async function launch(keyB64) {
+    if (!window.crypto || !crypto.subtle || typeof DecompressionStream === "undefined") { show("s-net"); $("s-net").firstElementChild.textContent = t("old"); $("b-retry").hidden = true; return; }
+    var raw = b64($("p").textContent.trim()), iv = raw.slice(0, 12), ct = raw.slice(12);
+    var key = await crypto.subtle.importKey("raw", b64(keyB64), "AES-GCM", false, ["decrypt"]);
+    var plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ct);
+    var html = await new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    clearInterval(timer);
+    document.open(); document.write(html); document.close();
+  }
+
+  function begin() {
+    var tok = get();
+    if (!tok) { showEmail(); return; }
+    show("s-load"); say("");
+    post({ action: "viewOpen", t: tok, ua: ua() }).then(function (r) {
+      if (r && r.ok && r.key) return launch(r.key);
+      if (r && r.auth === false) { del(); showEmail(); return; }
+      show("s-net"); say((r && r.error) || "", true);
+    }).catch(function () { show("s-net"); say(""); });
+  }
+  function showEmail() { show("s-email"); say(""); setTimeout(function () { $("em").focus(); }, 30); }
+
+  // ---- sign in ----
+  var email = "", timer = null, waitLeft = 0;
+  var okDomain = function (e) { return /^[a-z0-9._%+'\-]{1,64}@(ecooils\.com\.my|ecooils\.co\.id)$/.test(e) || /^iggifernandes@gmail\.com$/.test(e); };
+  function setResend() {
+    var b = $("b-resend");
+    if (waitLeft > 0) { b.disabled = true; b.textContent = t("resendIn", waitLeft); } else { b.disabled = false; b.textContent = t("resend"); }
+  }
+  function startWait(n) {
+    waitLeft = n; setResend(); clearInterval(timer);
+    timer = setInterval(function () { waitLeft--; setResend(); if (waitLeft <= 0) clearInterval(timer); }, 1000);
+  }
+  function requestCode(fromResend) {
+    var btn = $("b-send"); btn.disabled = true; btn.textContent = t("sending"); say("");
+    return post({ action: "viewRequest", email: email, ua: ua() }).then(function (r) {
+      btn.disabled = false; btn.textContent = t("send");
+      if (!r || !r.ok) { say((r && r.error) || t("net"), true); if (fromResend) setResend(); return; }
+      $("to").textContent = email; show("s-code"); startWait(60);
+      say(r.again ? t("again") : t("sent")); setTimeout(function () { $("cd").focus(); }, 30);
+    }, function () { btn.disabled = false; btn.textContent = t("send"); say(t("net"), true); });
+  }
+  $("f-email").onsubmit = function (ev) {
+    ev.preventDefault();
+    email = $("em").value.trim().toLowerCase();
+    if (!okDomain(email)) { say(t("domain"), true); return; }
+    requestCode(false);
+  };
+  var verifying = false;
+  function verify() {
+    if (verifying) return;
+    var code = $("cd").value.replace(/\D/g, "");
+    if (code.length !== 6) return;
+    verifying = true; var b = $("b-open"); b.disabled = true; b.textContent = t("checking"); say("");
+    post({ action: "viewVerify", email: email, code: code, ua: ua() }).then(function (r) {
+      verifying = false; b.disabled = false; b.textContent = t("open");
+      if (r && r.ok && r.token && r.key) { put(r.token); show("s-load"); return launch(r.key); }
+      $("cd").value = ""; say(t("bad"), true); $("cd").focus();
+    }).catch(function () { verifying = false; b.disabled = false; b.textContent = t("open"); say(t("net"), true); });
+  }
+  $("f-code").onsubmit = function (ev) { ev.preventDefault(); verify(); };
+  $("cd").oninput = function () { this.value = this.value.replace(/\D/g, "").slice(0, 6); if (this.value.length === 6) verify(); };
+  $("b-resend").onclick = function () { requestCode(true); };
+  $("b-other").onclick = function () { clearInterval(timer); show("s-email"); say(""); $("em").focus(); };
+  $("b-retry").onclick = begin;
+
+  applyLang();
+  begin();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# the plain (readable) tracker and the key must NEVER be committed - the published index.html only holds the encrypted copy
+build/app.html
+build/secrets/
+build/out/

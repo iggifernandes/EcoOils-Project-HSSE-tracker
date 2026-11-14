@@ -1,4 +1,4 @@
-// CODE.GS VERSION 2.3 - 2026-11-02 (paste this whole file, then Deploy > Manage deployments > pencil > New version; then reload the Sheet to see the HSSE Tracker menu)
+// CODE.GS VERSION 3.0 - 2026-11-14 (adds one-time-code sign-in for everyone who opens the tracker; paste this whole file, then Deploy > Manage deployments > pencil > New version)
 /**
  * Mentari HSSE Tracker — Google Sheets backend
  * ---------------------------------------------
@@ -65,6 +65,157 @@ function _mgrPassOk(pw) {
 }
 function _sixDigits() { return ("000000" + (parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 8), 16) % 1000000)).slice(-6); }
 
+// ================= v3.0: viewer sign-in (everyone who opens the tracker) =================
+// Only @ecooils.com.my / @ecooils.co.id addresses (plus the owner's own) can get a 6-digit code by email.
+// Every code request, sign-in and page open is written to the "AccessLog" tab (only people who can edit this Sheet can see it).
+// Viewers never see who else opened the tracker. The page itself is encrypted; the key is released only to a signed-in viewer.
+var VIEW_DOMAINS = ["ecooils.com.my", "ecooils.co.id"];
+var VIEW_EXTRA = ["iggifernandes@gmail.com"];   // owner's own address (remove if not wanted)
+var SESSION_DAYS = 14;                          // a device stays signed in this long, then asks for a new code
+var CODE_MINUTES = 10;                          // a code is valid this long
+var APP_KEY_B64 = "";                           // filled in ONLY in the copy that is pasted into Apps Script (blank in the public repo copy)
+var ACCESS_LOG = "AccessLog", ACCESS_SUMMARY = "AccessSummary", BLOCKED_SHEET = "Blocked";
+
+function _normEmail(v) { return String(v || "").trim().toLowerCase(); }
+function _allowedEmail(em) {
+  if (!/^[a-z0-9._%+'\-]{1,64}@[a-z0-9.\-]{3,80}$/.test(em)) return false;
+  if (VIEW_EXTRA.indexOf(em) !== -1) return true;
+  return VIEW_DOMAINS.indexOf(em.split("@")[1]) !== -1;
+}
+function _safeEq(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  var d = 0;
+  for (var i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+function _secret() {
+  var p = _props(), s = p.getProperty("VIEW_SECRET");
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid(); p.setProperty("VIEW_SECRET", s); }
+  return s;
+}
+function _epoch() { return _props().getProperty("VIEW_EPOCH") || "1"; }
+function _sign(payload) { return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(payload, _secret())); }
+function _mkToken(email) {
+  var payload = email + "|" + (Date.now() + SESSION_DAYS * 86400000) + "|" + _epoch();
+  return Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes()) + "." + _sign(payload);
+}
+function _readToken(tok) {   // -> the signed-in email, or "" when the token is missing, tampered, expired, revoked or blocked
+  try {
+    var parts = String(tok || "").split(".");
+    if (parts.length !== 2) return "";
+    var payload = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString();
+    if (!_safeEq(_sign(payload), parts[1])) return "";
+    var f = payload.split("|");
+    if (f.length !== 3 || Number(f[1]) < Date.now() || f[2] !== _epoch()) return "";
+    if (!_allowedEmail(f[0]) || _blocked(f[0])) return "";
+    return f[0];
+  } catch (e) { return ""; }
+}
+function _blocked(email) {
+  var cache = CacheService.getScriptCache(), raw = cache.get("blk");
+  if (raw === null || raw === undefined) {
+    var list = [];
+    try {
+      var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BLOCKED_SHEET);
+      if (sh && sh.getLastRow() > 1) list = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(function (r) { return _normEmail(r[0]); }).filter(String);
+    } catch (e) {}
+    raw = JSON.stringify(list);
+    cache.put("blk", raw, 60);
+  }
+  return JSON.parse(raw).indexOf(email) !== -1;
+}
+function _gateOn() { return _props().getProperty("GATE_ON") === "1"; }
+
+// ---- access log (Time | Email | Event | Device / note) ----
+function _logSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(ACCESS_LOG);
+  if (sh) return sh;
+  sh = ss.insertSheet(ACCESS_LOG);
+  sh.getRange(1, 1, 1, 4).setValues([["Time", "Email", "Event", "Device / note"]]).setFontWeight("bold");
+  sh.setFrozenRows(1);
+  sh.getRange("A2:A").setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  sh.setColumnWidth(1, 150); sh.setColumnWidth(2, 260); sh.setColumnWidth(3, 120); sh.setColumnWidth(4, 360);
+  if (!ss.getSheetByName(BLOCKED_SHEET)) {
+    var bl = ss.insertSheet(BLOCKED_SHEET);
+    bl.getRange(1, 1).setValue("Email to block (one per row; takes effect within a minute)").setFontWeight("bold");
+    bl.setColumnWidth(1, 420);
+  }
+  if (!ss.getSheetByName(ACCESS_SUMMARY)) {
+    var sm = ss.insertSheet(ACCESS_SUMMARY);
+    sm.getRange(1, 1, 1, 4).setValues([["Email", "Times opened", "Last access", "First access"]]).setFontWeight("bold");
+    sm.getRange("A2").setFormula('=IFERROR(QUERY(AccessLog!A2:D,"select B, count(B), max(A), min(A) where C = \'OPEN\' or C = \'LOGIN_OK\' group by B order by max(A) desc label B \'\', count(B) \'\', max(A) \'\', min(A) \'\'",0),"")');
+    sm.getRange("C2:D").setNumberFormat("yyyy-mm-dd hh:mm:ss");
+    sm.setColumnWidth(1, 300); sm.setColumnWidth(2, 110); sm.setColumnWidth(3, 160); sm.setColumnWidth(4, 160);
+  }
+  return sh;
+}
+function _log(email, event, note) {
+  try { _logSheet().appendRow([new Date(), email || "", event, String(note || "").slice(0, 160)]); } catch (e) {}
+}
+// rejected addresses can be typed by anyone: keep the log from being flooded
+function _logRejected(email, note) {
+  var cache = CacheService.getScriptCache(), n = Number(cache.get("rej_n") || 0);
+  if (n >= 100) return;
+  cache.put("rej_n", String(n + 1), 3600);
+  _log(String(email || "").slice(0, 80), "REJECTED", note);
+}
+
+// ---- sign-in steps ----
+function _viewRequest(email, ua) {
+  email = _normEmail(email);
+  if (!_allowedEmail(email)) { _logRejected(email, "not an allowed address"); return { ok: false, error: "Only @ecooils.com.my and @ecooils.co.id addresses can open this tracker." }; }
+  if (!APP_KEY_B64) return { ok: false, error: "The tracker is not fully set up yet (server key missing)." };
+  if (_blocked(email)) { _log(email, "BLOCKED", "code request"); return { ok: true }; }   // same reply as a normal send
+  var cache = CacheService.getScriptCache(), rk = "otp_rl_" + email, ck = "otp_cd_" + email, n = Number(cache.get(rk) || 0);
+  if (cache.get(ck)) return { ok: true, again: true };
+  if (n >= 5) { _log(email, "RATE_LIMIT", "too many codes in an hour"); return { ok: false, error: "Too many codes requested. Please try again in an hour." }; }
+  if (MailApp.getRemainingDailyQuota() < 3) { _log(email, "MAIL_QUOTA", "daily email limit reached"); return { ok: false, error: "The daily email limit has been reached. Please try again tomorrow." }; }
+  var code = _sixDigits(), salt = Utilities.getUuid();
+  cache.put("otp_" + email, JSON.stringify({ h: _hash(salt, code), s: salt, e: Date.now() + CODE_MINUTES * 60000, t: 0 }), CODE_MINUTES * 60);
+  cache.put(ck, "1", 60);
+  cache.put(rk, String(n + 1), 3600);
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: "HSSE Performance Tracker - your access code " + code,
+      body: "Your access code is " + code + "\n\nIt is valid for " + CODE_MINUTES + " minutes and can be used once. Enter it on the tracker sign-in page.\n\nIf you did not ask for this code, ignore this email - nobody can open the tracker without it.",
+      name: "EcoOils HSSE Tracker"
+    });
+  } catch (mailErr) {
+    cache.remove("otp_" + email); cache.remove(ck);
+    _log(email, "MAIL_FAIL", String(mailErr).slice(0, 120));
+    return { ok: false, error: "The email could not be sent. Please try again." };
+  }
+  _log(email, "CODE_SENT", ua);
+  return { ok: true };
+}
+function _viewVerify(email, code, ua) {
+  email = _normEmail(email);
+  var bad = { ok: false, error: "Code expired or incorrect. Request a new one." }, cache = CacheService.getScriptCache(), k = "otp_" + email;
+  if (!_allowedEmail(email) || _blocked(email) || !APP_KEY_B64) { _logRejected(email, "sign-in attempt"); return bad; }
+  var raw = cache.get(k);
+  if (!raw) { _log(email, "LOGIN_FAIL", "no active code"); return bad; }
+  var o = JSON.parse(raw);
+  if (Date.now() > o.e || o.t >= 5) { cache.remove(k); _log(email, "LOGIN_FAIL", "code expired or used up"); return bad; }
+  o.t++;
+  if (!_safeEq(_hash(o.s, String(code || "").replace(/\D/g, "")), o.h)) {
+    cache.put(k, JSON.stringify(o), Math.max(1, Math.ceil((o.e - Date.now()) / 1000)));
+    _log(email, "LOGIN_FAIL", "wrong code (" + o.t + "/5)");
+    return bad;
+  }
+  cache.remove(k);
+  _log(email, "LOGIN_OK", ua);
+  return { ok: true, token: _mkToken(email), key: APP_KEY_B64 };
+}
+function _viewOpen(token, ua) {
+  var em = _readToken(token);
+  if (!em) return { ok: false, auth: false, error: "Sign in required" };
+  if (!APP_KEY_B64) return { ok: false, error: "The tracker is not fully set up yet (server key missing)." };
+  _log(em, "OPEN", ua);
+  return { ok: true, key: APP_KEY_B64 };
+}
+
 // ---- Logger access codes: one salted-hash code per logger. "Forgot access code?" emails a NEW code to the manager (MANAGER_RESET_EMAIL), who passes it on. ----
 function _loggerPassOk(email, pw) {
   email = String(email || "").trim().toLowerCase();
@@ -87,6 +238,11 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu("HSSE Tracker")
     .addItem("Set manager code", "menuSetManagerCode")
     .addItem("Set a logger's access code", "menuSetLoggerCode")
+    .addSeparator()
+    .addItem("Require sign-in code: turn ON", "menuGateOn")
+    .addItem("Require sign-in code: turn OFF", "menuGateOff")
+    .addItem("Sign everyone out", "menuSignOutAll")
+    .addItem("Open access log", "menuOpenLog")
     .addToUi();
 }
 function _askCode(ui, title, text) {
@@ -119,6 +275,21 @@ function menuSetLoggerCode() {
   ui.alert("Access code updated for " + em + ".");
 }
 
+function menuGateOn() {
+  _props().setProperty("GATE_ON", "1"); _logSheet();
+  SpreadsheetApp.getUi().alert("Sign-in code is now REQUIRED for all tracker data.");
+}
+function menuGateOff() {
+  _props().setProperty("GATE_ON", "0");
+  SpreadsheetApp.getUi().alert("Sign-in code is now OFF for tracker data (the old, open page works again).");
+}
+function menuSignOutAll() {
+  _props().setProperty("VIEW_EPOCH", String(Number(_epoch()) + 1));
+  _log("(all)", "SIGNED_OUT", "everyone signed out from the menu");
+  SpreadsheetApp.getUi().alert("Everyone has been signed out. Each person needs a new code next time.");
+}
+function menuOpenLog() { var sh = _logSheet(); SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(sh); }
+
 // Run this ONCE from the editor (Run > authorizeMail > Allow). It also sends a test email to MANAGER_RESET_EMAIL.
 function authorizeMail() {
   MailApp.sendEmail(MANAGER_RESET_EMAIL, "Mentari HSSE Tracker - email check", "Code reset emails will be sent to this address.");
@@ -139,7 +310,7 @@ function _sheet(name) {
   return sh;
 }
 // Optional: run once from the editor to create both tabs straight away.
-function setup() { _sheet(LIVE_SHEET); _sheet(PENDING_SHEET); }
+function setup() { _sheet(LIVE_SHEET); _sheet(PENDING_SHEET); _logSheet(); _secret(); }
 
 function _json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -224,6 +395,7 @@ function _sumDataObjects(list, month, project) {
 
 function doGet(e) {
   try {
+    if (_gateOn()) return _json({ ok: false, auth: false, error: "Sign in required" });
     var live = _sheet(LIVE_SHEET);
     var records = _liveRowsToRecords(live).map(function (r) { return r.data; });
     return _json({ ok: true, months: records });
@@ -236,6 +408,18 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents || "{}");
     var action = body.action;
+
+    if (action === "viewRequest") return _json(_viewRequest(body.email, body.ua));
+    if (action === "viewVerify") return _json(_viewVerify(body.email, body.code, body.ua));
+    if (action === "viewOpen") return _json(_viewOpen(body.t, body.ua));
+    if (action === "viewSignout") { var so = _readToken(body.t); if (so) _log(so, "SIGNED_OUT", "by the user"); return _json({ ok: true }); }
+    // everything below needs a signed-in viewer once the sign-in code is switched on
+    if (_gateOn() && !_readToken(body.t)) return _json({ ok: false, auth: false, error: "Sign in required" });
+
+    if (action === "liveMonths") {
+      var liveSheet = _sheet(LIVE_SHEET);
+      return _json({ ok: true, months: _liveRowsToRecords(liveSheet).map(function (r) { return r.data; }) });
+    }
 
     if (action === "submit") {
       var email = (body.email || "").trim().toLowerCase();
