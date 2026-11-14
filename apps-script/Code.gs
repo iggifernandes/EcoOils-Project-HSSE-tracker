@@ -1,4 +1,4 @@
-// CODE.GS VERSION 3.0 - 2026-11-14 (adds one-time-code sign-in for everyone who opens the tracker; paste this whole file, then Deploy > Manage deployments > pencil > New version)
+// CODE.GS VERSION 3.1 - 2026-11-14 (one-time-code sign-in for everyone who opens the tracker; code email marked no-reply; paste this whole file, then Deploy > Manage deployments > pencil > New version)
 /**
  * Mentari HSSE Tracker — Google Sheets backend
  * ---------------------------------------------
@@ -179,8 +179,9 @@ function _viewRequest(email, ua) {
     MailApp.sendEmail({
       to: email,
       subject: "HSSE Performance Tracker - your access code " + code,
-      body: "Your access code is " + code + "\n\nIt is valid for " + CODE_MINUTES + " minutes and can be used once. Enter it on the tracker sign-in page.\n\nIf you did not ask for this code, ignore this email - nobody can open the tracker without it.",
-      name: "EcoOils HSSE Tracker"
+      body: "Your access code is " + code + "\n\nIt is valid for " + CODE_MINUTES + " minutes and can be used once. Enter it on the tracker sign-in page.\n\nIf you did not ask for this code, ignore this email - nobody can open the tracker without it.\n\nThis is an automatic message. Please do not reply - this mailbox is not monitored.",
+      name: "EcoOils HSSE Tracker (no reply)",
+      noReply: true
     });
   } catch (mailErr) {
     cache.remove("otp_" + email); cache.remove(ck);
